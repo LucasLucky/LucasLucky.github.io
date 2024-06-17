@@ -122,8 +122,8 @@ const hasError = function() {
   if (
     (!files1 || !files2) ||
     (files1.length != files2.length) ||
-    (!Array.from(files1).every(file => ['xlf', 'mqxliff', 'txlf', 'sdlxliff', 'mxliff'].indexOf(file.name.split('.').pop()) >= 0)) ||
-    (!Array.from(files2).every(file => ['xlf', 'mqxliff', 'txlf', 'sdlxliff', 'mxliff'].indexOf(file.name.split('.').pop()) >= 0))
+    (!Array.from(files1).every(file => ['xlf', 'xliff', 'tmx', 'mqxliff', 'txlf', 'sdlxliff', 'mxliff'].indexOf(file.name.split('.').pop()) >= 0)) ||
+    (!Array.from(files2).every(file => ['xlf', 'xliff', 'tmx', 'mqxliff', 'txlf', 'sdlxliff', 'mxliff'].indexOf(file.name.split('.').pop()) >= 0))
   ) {
     displayError('Error with files');
     return true;
