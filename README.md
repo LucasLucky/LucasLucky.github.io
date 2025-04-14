@@ -1,95 +1,87 @@
 # trans-diff
 
-Create a filterable, commentable diff table from XLIFF files
+从XLIFF文件创建可过滤、可评论的差异表
 
-[https://shunsakurai.github.io/trans-diff/](https://shunsakurai.github.io/trans-diff/)
+[TransDiff 在线](https://lucaslucky.github.io)
 
-## Roadmap and update history
+## 支持文件
 
-TODO:
-- [x] Support single file
-- [x] Support multiple files (detect file IDs)
-- [x] Save comments
-- [ ] Unzip .mqxlz files
-- [x] Implement Transifex URL converter
+文件:
+- [x] 支持单个文件 xlf, xliff, sdlxliff, txlf, mqxliff
+- [x] 不支持多个文件（检测文件ID）, 不支持 tmx，可以用 rainbow 转 tmx 为 xliff
 
-Updates:
-- ⏱ Transifex URL converter doesn't directly download the XLIFF file anymore
+更新：
+- ⏱ Transifex URL 转换器直接下载 XLIFF 文件
 
-## How to use
+## 如何使用
 
-Please watch the "How to use" video on YouTube for details:
+请观看 YouTube的“如何使用”视频以获取详细信息：
 
-[![Trans Diff - How to use](https://img.youtube.com/vi/-zuSH3Bl_x0/0.jpg)](https://www.youtube.com/watch?v=-zuSH3Bl_x0)
+[![Trans Diff - 如何使用](httpsimg.youtube.comi/-zuSH3Bl_x0/0.jpg(https://www.youtube.com/watch?v=-zuSH3Bl_x0)
 
-### How to generate the diff file
+### 如何生成 diff 文件
 
-It's pretty straight forward.
-1. Export XLIFF files at the start and the end of the review.
-  - For Transifex, click "Download for translation as XLIFF" (or "Download for use" when the source file is an XLIFF file)
-  - For memoQ, click "Export" > "Export Bilingual", and unselect "Save a compressed file (.mqxlz)"
-1. Choose XLIFF files (File 1 and File 2) and click "Compare". The diff file will be downloaded automatically.
+非常简单。
+1. 在审查开始和结束时导出 XFF 文件。
+  - 对于 Transifex，点击“以 XLIFF 格式下载以进行翻译”（或当源文件是 XLIFF 文件时点击“下载以使用”）
+  - 对于 memoQ，点击“导出” > “导出双语”，并取消选择“保存压缩文件 (.mqxlz)”
+1. 选择 XLIFF 文件（文件1和文件2），然后点击“比较”。diff 文件将自动下载。
 
-Supported file types:
+支持的文件类型：
 
-- .xlf ([XLIFF version 1.2](http://docs.oasis-open.org/xliff/v1.2/os/xliff-core.html))
-- .mqxliff (.mqxlz not supported at the moment)
+- .xlf ([XLIFF 版本 1.2](http://docs.oasis-open.orgliff/v1.2/os/xliff-core.html))
+- .mqxliff (.mqxlz 当前不支持)
 - .mxliff
 
-Diff specs:
+Diff 规格：
 
-- The diff is created based on [Levenshtein distance](https://en.wikipedia.org/wiki/Levenshtein_distance)
-- The comparison is character-based for full-width characters (e.g. Japanese) and word-based for half-width characters (e.g. English)
+- diff 是基于 [Levenshtein 距离](https://en.wikipedia.org/wiki/Lehtein_distance)
+- 比较对于全角字符（例如日语）是基于字符的，半角字符（例如英语）是基于单词的
 
-Limitations:
+限制：
 
-- Basically, the number of segments/strings needs to be the same between File 1 and File 2.
+- 基本，文件1和文件2之间的段/字符串数量需要相同。
 
-### How to use the diff file
+### 如何使用差异文件
 
-Header:
-- Filter the diff table with changed/unchanged status.
-- Expand or collapse tag contents.
-- The diff file opens in the darker mode if your computer is in dark mode. You can manually toggle the darker mode on or off.
-- Click "Save Static View" to save the current filtered view without JavaScript, for reduced file size and for better security. The static file is not commentable or filterable.
-- Click "Resave File" to save the full file.
-- Filter with text (contains text, NOT contains text, matches regex, NOT matches regex, and in number range). For details, please hover over the left-most column in each row. For example, you can display only the segments with any comments by putting a dot "." in the regular expression row above the Note column.
-- Click "Clear Filter" to erase all text in the filter.
+标题：
+- 使用更改/未更改状态过滤差异表。
+- 展开或折叠标签内容。
+- 如果您的电脑处于深色模式，差异文件将以深色模式打开。您可以手动开启或关闭深色模式。
+- 单击“保存静态视图”以保存当前过滤后的视图，不包含JavaScript，可以减少文件大小并提高安全性。静态文件不可评论或过滤。
+- 单击“重新保存文件”以保存完整的文件。
+- 使用文本过滤（包含文本、不包含文本、匹配正则表达式、不匹配正则表达式，以及在数字范围内）。详细信息请将鼠标悬停在每一行的最左列。例如，您可以通过在“注释”列上方的正则表达式行中输入一个点“.”来仅显示带有任何注释的段落。
+- 单击“清除过滤器”以清除过滤器中的所有文本。
 
-Table:
-- Click "▼" or the file name to hide the table for the file.
-- Left-click the table header to sort the table by the column.
-- Right-click the table header to hide other columns. It's useful for copy-pasting the column into a text editor.
-- Click in the Note column to add comments. Please remember to resave the file after commenting, by pressing Ctrl/Cmd+S keys or clicking "Resave File".
+表格：
+- 单击“▼”或文件名以隐藏该文件的表格。
+- 左键单击表头以按列对表格进行排序。
+- 右键单击表头以隐藏其他列。这对于将列复制粘贴到文本编辑器中非常有用。
+- 单击“注释”列以添加注释。评论后请记得通过按Ctrl/Cmd+S键或单击“重新保存文件”来重新保存文件。
 
-### Downloading XLIFF files
+### 下载XLIFF文件
 
-Trans Diff has a Transifex URL converter. The URL of the editor `https://app.transifex.com/{organization}/{project}/translate/#{lang}/{resource}/{stringId}?{query}` is converted to `https://app.transifex.com/{organization}/{project}/{resource}` and you can download the XLIFF file by selecting your language and pressing the "Download for translation as XLIFF" button. It's useful to download the XLIFF files before and after you do translation or review in Tranifex. *Please note that this is not an official feature of Transifex.*
+Trans Diff有一个Transifex URL转换器。编辑器的URL `https://app.transifex.com/{organization}/{project}/translate/#{lang}/{resource}/{stringId}?{query}` 被转换为 `https://app.transifex.com/{organization}/{project}/{resource}`，您可以通过选择您的语言并按下“下载翻译为XLIFF”按钮来下载XLIFF文件。在您在Tranifex中进行翻译或审查之前和之后，下载XLIFF文件非常有用。*请注意，这不是Transifex的官方功能。*
 
-Usage:
+使用方法：
 
-- Paste the Transifex editor URL in the converter (which looks like Terminal / Command Prompt), *move cursor at the end of the line*, and press Enter key to download the XLIFF file
-- You can reference the previous input by pressing Arrow Up key
+- 将Transifex编辑器URL粘贴到转换器（看起来像终端/命令提示符），*将光标移动到行尾*，然后按Enter键下载XLIFF文件。
+- 您可以通过按向上箭头键引用之前的输入。
 
-## Motivation and inspiration
+## 动机与灵感
 
-Originally I wanted to compare .mqxlz files but the project has been dormant because it was tricky to implement the code to unzip files in client JavaScript. It seems .mqxlz is a ZIP64 format.
-I recently often work with Transifex XLIFF files so I resumed this project.
-I was highly inspired and motivated by the diff tool by [AlissaSabre](https://github.com/AlissaSabre), not on GitHub though.
+最初我想比较.mqxlz文件，但由于在客户端JavaScript中实现解压缩文件的代码较为棘手，项目一直处于休眠状态。似乎.mqxlz是ZIP64格式。
+最近我经常使用Transifex XLIFF文件，因此我恢复了这个项目。
+我受到了[AlissaSabre](https://github.com/AlissaSabre)的差异工具的高度启发和激励，尽管它不在GitHub上。
 
-## License
+## 许可证
 
-Anyone can use this tool free of charge.
+任何人都可以免费使用此工具。
 
-[MIT License](https://github.com/ShunSakurai/trans-diff/blob/master/LICENSE)
+[MIT许可证](https://github.com/ShunSakurai/trans-diff/blob/master/LICENSE)
 
-## Privacy policy and terms of use
+## 隐私政策和使用条款
 
-We don't store your data. We physically can't. (Borrowed part from [here](https://github.com/amitg87/asana-chrome-plugin/wiki/Privacy-policy).) All actions are done on client JavaScript on your computer.
+我们不会存储您的数据。我们物理上无法存储。（部分内容借鉴自[这里](https://github.com/amitg87/asana-chrome-plugin/wiki/Privacy-policy)。）所有操作都在您计算机上的客户端JavaScript中完成。
 
-I try my best to maintain the quality and safety of this extension, but please use it at your own risk. The author doesn't take any responsibility for any damage caused by use of this tool.
-
-## Feedback and contribution
-
-I'd love to hear from users and developers.
-Please feel free to post feature requests, bug reports, and questions through the [GitHub Issues](https://github.com/ShunSakurai/trans-diff/issues). I'd also welcome pull requests.
+我尽力维护此扩展的质量和安全性，但请自行承担使用风险。作者不对因使用此工具造成的任何损害负责。
