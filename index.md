@@ -21,5 +21,6 @@
   </div>
   <div class="message" id="message"></div>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="script.js" type="text/javascript" charset="utf-8" async defer></script>
 <script src="converter.js" type="text/javascript" charset="utf-8" async defer></script>
