@@ -21,23 +21,5 @@
   </div>
   <div class="message" id="message"></div>
 
-  <div class="converter subsection">
-    <h3 style="float: left;">Transifex URL converter - download XLIFF file</h3>
-    <textarea class="terminal" id="terminal" spellcheck="false"></textarea>
-    <small class="note">* The behavior of Transifex changed, and we no longer can download the XLIFF file directly using this converter. Instead, the converter opens the resource page so please manually download the XLIFF file from that page.</small>
-  </div>
-
-</div>
-
-<div>
-  <h3>Documentation</h3>
-    Please see <a href="https://github.com/ShunSakurai/trans-diff#how-to-use" rel="noopener oreferrer" tabindex="-1" target="blank_">README</a> and the video:
-    <iframe width="448" height="332" src="https://www.youtube.com/embed/-zuSH3Bl_x0" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-</div>
-<div>
-You might be interested in other tools by the developer:
-- <a href="https://shunsakurai.github.io/kinsoku-checker/" rel="noopener oreferrer" tabindex="-1" target="blank_">Kinsoku Checker</a>
-</div>
-
 <script src="script.js" type="text/javascript" charset="utf-8" async defer></script>
 <script src="converter.js" type="text/javascript" charset="utf-8" async defer></script>
