@@ -349,41 +349,74 @@ const parseTxt = function(content, fileIndex) {
   return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
 };
 
-const parseDocx = function(arrayBuffer, fileIndex) {
+const parseDocx = async function(arrayBuffer, fileIndex) {
   const original = `DOCX_File_${fileIndex}`;
-  let parsedTransId = ['doc_content'];
-  let parsedSource = [''];
-  let parsedTarget = [''];
-  let parsedPercent = [0];
-  let parsedNoteArrays = [[]];
+  let parsedTransId = [];
+  let parsedSource = [];
+  let parsedTarget = [];
+  let parsedPercent = [];
+  let parsedNoteArrays = [];
   
   try {
-    // 简单的DOCX解析 - 查找document.xml中的文本
-    const uint8Array = new Uint8Array(arrayBuffer);
-    const text = new TextDecoder('utf-8').decode(uint8Array);
+    // 使用JSZip解析DOCX文件
+    const zip = new JSZip();
+    const docxZip = await zip.loadAsync(arrayBuffer);
     
-    // 尝试查找XML内容
-    const xmlMatch = text.match(/<w:t[^>]*>([^<]+)<\/w:t>/g);
-    if (xmlMatch) {
-      let extractedText = xmlMatch.map(match => {
-        const textMatch = match.match(/>([^<]+)</);
-        return textMatch ? textMatch[1] : '';
-      }).join(' ');
+    // 读取document.xml文件
+    const documentXml = await docxZip.file('word/document.xml').async('string');
+    
+    // 提取文本内容
+    const textMatches = documentXml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g);
+    if (textMatches && textMatches.length > 0) {
+      let allText = '';
+      textMatches.forEach(match => {
+        const textMatch = match.match(/<w:t[^>]*>([^<]*)<\/w:t>/);
+        if (textMatch && textMatch[1]) {
+          allText += textMatch[1];
+        }
+      });
       
-      if (extractedText.trim()) {
-        parsedSource[0] = extractedText;
-        parsedTarget[0] = extractedText;
+      if (allText.trim()) {
+        // 按段落分割文本
+        const paragraphs = allText.split(/\n+/).filter(p => p.trim());
+        if (paragraphs.length > 0) {
+          paragraphs.forEach((paragraph, index) => {
+            if (paragraph.trim()) {
+              parsedTransId.push(`para_${index + 1}`);
+              parsedSource.push(paragraph.trim());
+              parsedTarget.push(paragraph.trim());
+              parsedPercent.push(0);
+              parsedNoteArrays.push([]);
+            }
+          });
+        } else {
+          parsedTransId.push('doc_content');
+          parsedSource.push(allText.trim());
+          parsedTarget.push(allText.trim());
+          parsedPercent.push(0);
+          parsedNoteArrays.push([]);
+        }
       } else {
-        parsedSource[0] = 'Could not extract text from DOCX';
-        parsedTarget[0] = 'Could not extract text from DOCX';
+        parsedTransId.push('doc_content');
+        parsedSource.push('Empty DOCX document');
+        parsedTarget.push('Empty DOCX document');
+        parsedPercent.push(0);
+        parsedNoteArrays.push([]);
       }
     } else {
-      parsedSource[0] = 'Could not parse DOCX file';
-      parsedTarget[0] = 'Could not parse DOCX file';
+      parsedTransId.push('doc_content');
+      parsedSource.push('No text found in DOCX');
+      parsedTarget.push('No text found in DOCX');
+      parsedPercent.push(0);
+      parsedNoteArrays.push([]);
     }
   } catch (error) {
-    parsedSource[0] = 'Error parsing DOCX file';
-    parsedTarget[0] = 'Error parsing DOCX file';
+    console.error('Error parsing DOCX:', error);
+    parsedTransId.push('doc_error');
+    parsedSource.push('Error parsing DOCX file: ' + error.message);
+    parsedTarget.push('Error parsing DOCX file: ' + error.message);
+    parsedPercent.push(0);
+    parsedNoteArrays.push([]);
   }
   
   return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
@@ -398,36 +431,44 @@ const parseXlsx = function(arrayBuffer, fileIndex) {
   let parsedNoteArrays = [];
   
   try {
-    // 极简XLSX解析 - 查找sharedStrings.xml中的文本
-    const uint8Array = new Uint8Array(arrayBuffer);
-    const text = new TextDecoder('utf-8').decode(uint8Array);
+    // 使用XLSX库解析Excel文件
+    const workbook = XLSX.read(arrayBuffer, {type: 'array'});
     
-    // 尝试提取共享字符串
-    const stringMatches = text.match(/<t[^>]*>([^<]+)<\/t>/g);
-    if (stringMatches && stringMatches.length > 0) {
-      stringMatches.forEach((match, index) => {
-        const textMatch = match.match(/>([^<]+)</);
-        if (textMatch && textMatch[1].trim()) {
-          parsedTransId.push(`row_${index + 1}`);
-          parsedSource.push(textMatch[1]);
-          parsedTarget.push(textMatch[1]);
-          parsedPercent.push(0);
-          parsedNoteArrays.push([]);
+    // 获取第一个工作表
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+    
+    // 将工作表转换为JSON
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, {header: 1, defval: ''});
+    
+    if (jsonData.length > 0) {
+      jsonData.forEach((row, rowIndex) => {
+        if (row.length > 0) {
+          // 合并行中的所有非空单元格
+          const rowText = row.filter(cell => cell && cell.toString().trim()).join(' ');
+          if (rowText.trim()) {
+            parsedTransId.push(`row_${rowIndex + 1}`);
+            parsedSource.push(rowText);
+            parsedTarget.push(rowText);
+            parsedPercent.push(0);
+            parsedNoteArrays.push([]);
+          }
         }
       });
     }
     
     if (parsedTransId.length === 0) {
       parsedTransId.push('xlsx_content');
-      parsedSource.push('Could not parse XLSX file');
-      parsedTarget.push('Could not parse XLSX file');
+      parsedSource.push('Empty XLSX file');
+      parsedTarget.push('Empty XLSX file');
       parsedPercent.push(0);
       parsedNoteArrays.push([]);
     }
   } catch (error) {
+    console.error('Error parsing XLSX:', error);
     parsedTransId.push('xlsx_error');
-    parsedSource.push('Error parsing XLSX file');
-    parsedTarget.push('Error parsing XLSX file');
+    parsedSource.push('Error parsing XLSX file: ' + error.message);
+    parsedTarget.push('Error parsing XLSX file: ' + error.message);
     parsedPercent.push(0);
     parsedNoteArrays.push([]);
   }
