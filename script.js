@@ -94,38 +94,36 @@ for (let e of ['mouseleave', 'mouseup']) {
   });
 }
 
-compare.addEventListener('click', function(e){
+// compare click 事件主入口，支持异步处理
+compare.addEventListener('click', async function(e){
   if (hasError()) return;
-  let readers1 = [];
-  let readers2 = [];
+  let fileType = getFileType(files1[0].name);
+
+  // 读取文件内容
+  let fileResults1 = [];
+  let fileResults2 = [];
+
   for (let i = 0; i < files1.length; i++) {
-
-    const reader1 = new FileReader();
-    readers1.push(reader1);
-    reader1.onload = function(e){
-      if ([...readers1, ...readers2].every(reader => reader.readyState == 2)) {
-        compareContents(readers1, readers2);
-      }
-    };
-    
-    const reader2 = new FileReader();
-    readers2.push(reader2);
-    reader2.onload = function(e){
-      if ([...readers1, ...readers2].every(reader => reader.readyState == 2)) {
-        compareContents(readers1, readers2);
-      }
-    };
-
-    // 根据文件类型选择读取方式
-    const fileType = getFileType(files1[i].name);
     if (fileType === 'docx' || fileType === 'xlsx') {
-      reader1.readAsArrayBuffer(files1[i]);
-      reader2.readAsArrayBuffer(files2[i]);
+      // 以ArrayBuffer读取
+      const buf1 = await files1[i].arrayBuffer();
+      const buf2 = await files2[i].arrayBuffer();
+      let res1 = await parseFileContent(buf1, fileType, 1);
+      let res2 = await parseFileContent(buf2, fileType, 2);
+      fileResults1.push(res1);
+      fileResults2.push(res2);
     } else {
-      reader1.readAsText(files1[i]);
-      reader2.readAsText(files2[i]);
+      // 以文本读取
+      const txt1 = await files1[i].text();
+      const txt2 = await files2[i].text();
+      let res1 = await parseFileContent(txt1, fileType, 1);
+      let res2 = await parseFileContent(txt2, fileType, 2);
+      fileResults1.push(res1);
+      fileResults2.push(res2);
     }
   }
+
+  await compareContents(fileResults1, fileResults2, fileType);
 });
 
 const getFileType = function(filename) {
@@ -174,25 +172,25 @@ const displayError = function(errorMessage) {
   }, 5000);
 };
 
-const compareContents = function(readers1, readers2) {
+// 对比内容的主逻辑，异步适配
+async function compareContents(fileResults1, fileResults2, fileType) {
   let contents1 = {};
   let contents2 = {};
   let results = {};
-  
-  const fileType = getFileType(files1[0].name);
-  
-  for (let reader2 of readers2) {
-    let [original, transId, source, target, percent, noteArrays] = parseFileContent(reader2.result, fileType, 2);
+
+  // 组装内容
+  for (let r = 0; r < fileResults2.length; r++) {
+    let [original, transId, source, target, percent, noteArrays] = fileResults2[r];
     while (contents2.hasOwnProperty(original)) original = original + '_';
     contents2[original] = {target: target, note: noteArrays};
   }
-  
-  for (let reader1 of readers1) {
-    let [original, transId, source, target, percent, noteArrays] = parseFileContent(reader1.result, fileType, 1);
+
+  for (let r = 0; r < fileResults1.length; r++) {
+    let [original, transId, source, target, percent, noteArrays] = fileResults1[r];
     while (contents1.hasOwnProperty(original)) original = original + '_';
     contents1[original] = {source: source, target: target, note: noteArrays};
 
-    if (readers1.length == 1 && readers2.length == 1) {
+    if (fileResults1.length == 1 && fileResults2.length == 1) {
       let onlyOriginal2 = Object.keys(contents2)[0];
       if (onlyOriginal2 != original) {
         contents2[original] = contents2[onlyOriginal2];
@@ -217,9 +215,10 @@ const compareContents = function(readers1, readers2) {
   } else {
     displayResults(results);
   }
-};
+}
 
-const parseFileContent = function(content, fileType, fileIndex) {
+// 适配异步的解析入口
+async function parseFileContent(content, fileType, fileIndex) {
   switch (fileType) {
     case 'xlf':
       return parseXliff(content, fileIndex);
@@ -228,13 +227,15 @@ const parseFileContent = function(content, fileType, fileIndex) {
     case 'txt':
       return parseTxt(content, fileIndex);
     case 'docx':
-      return parseDocx(content, fileIndex);
+      return await parseDocx(content, fileIndex);
     case 'xlsx':
-      return parseXlsx(content, fileIndex);
+      return await parseXlsx(content, fileIndex);
     default:
       return ['unknown', [], [], [], [], []];
   }
-};
+}
+
+// ========== 以下为各类型解析函数 ==========
 
 const parseXliff = function(content) {
   const original = /<file [^>]*?original="([^"]+?)"/.exec(content)[1];
@@ -349,74 +350,62 @@ const parseTxt = function(content, fileIndex) {
   return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
 };
 
-const parseDocx = function(arrayBuffer, fileIndex) {
+// ====== 关键：异步解析 DOCX/XLSX ======
+
+const parseDocx = async function(arrayBuffer, fileIndex) {
   const original = `DOCX_File_${fileIndex}`;
   let parsedTransId = ['doc_content'];
   let parsedSource = [''];
   let parsedTarget = [''];
   let parsedPercent = [0];
   let parsedNoteArrays = [[]];
-  
+
   try {
-    // 简单的DOCX解析 - 查找document.xml中的文本
-    const uint8Array = new Uint8Array(arrayBuffer);
-    const text = new TextDecoder('utf-8').decode(uint8Array);
-    
-    // 尝试查找XML内容
-    const xmlMatch = text.match(/<w:t[^>]*>([^<]+)<\/w:t>/g);
-    if (xmlMatch) {
-      let extractedText = xmlMatch.map(match => {
-        const textMatch = match.match(/>([^<]+)</);
-        return textMatch ? textMatch[1] : '';
+    const zip = await JSZip.loadAsync(arrayBuffer);
+    const docXml = await zip.file('word/document.xml').async('string');
+    const matches = docXml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g);
+    if (matches) {
+      let extractedText = matches.map(m => {
+        let mm = m.match(/<w:t[^>]*>([^<]*)<\/w:t>/);
+        return mm ? mm[1] : '';
       }).join(' ');
-      
-      if (extractedText.trim()) {
-        parsedSource[0] = extractedText;
-        parsedTarget[0] = extractedText;
-      } else {
-        parsedSource[0] = 'Could not extract text from DOCX';
-        parsedTarget[0] = 'Could not extract text from DOCX';
-      }
+      parsedSource[0] = extractedText;
+      parsedTarget[0] = extractedText;
     } else {
-      parsedSource[0] = 'Could not parse DOCX file';
-      parsedTarget[0] = 'Could not parse DOCX file';
+      parsedSource[0] = 'Could not extract text from DOCX';
+      parsedTarget[0] = 'Could not extract text from DOCX';
     }
   } catch (error) {
     parsedSource[0] = 'Error parsing DOCX file';
     parsedTarget[0] = 'Error parsing DOCX file';
   }
-  
   return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
 };
 
-const parseXlsx = function(arrayBuffer, fileIndex) {
+const parseXlsx = async function(arrayBuffer, fileIndex) {
   const original = `XLSX_File_${fileIndex}`;
   let parsedTransId = [];
   let parsedSource = [];
   let parsedTarget = [];
   let parsedPercent = [];
   let parsedNoteArrays = [];
-  
+
   try {
-    // 极简XLSX解析 - 查找sharedStrings.xml中的文本
-    const uint8Array = new Uint8Array(arrayBuffer);
-    const text = new TextDecoder('utf-8').decode(uint8Array);
-    
-    // 尝试提取共享字符串
-    const stringMatches = text.match(/<t[^>]*>([^<]+)<\/t>/g);
-    if (stringMatches && stringMatches.length > 0) {
-      stringMatches.forEach((match, index) => {
-        const textMatch = match.match(/>([^<]+)</);
-        if (textMatch && textMatch[1].trim()) {
-          parsedTransId.push(`row_${index + 1}`);
-          parsedSource.push(textMatch[1]);
-          parsedTarget.push(textMatch[1]);
+    const zip = await JSZip.loadAsync(arrayBuffer);
+    const sst = await zip.file('xl/sharedStrings.xml').async('string');
+    const matches = sst.match(/<t[^>]*>([^<]*)<\/t>/g);
+    if (matches) {
+      matches.forEach((m, i) => {
+        let mm = m.match(/<t[^>]*>([^<]*)<\/t>/);
+        if (mm && mm[1].trim()) {
+          parsedTransId.push(`row_${i+1}`);
+          parsedSource.push(mm[1]);
+          parsedTarget.push(mm[1]);
           parsedPercent.push(0);
           parsedNoteArrays.push([]);
         }
       });
     }
-    
     if (parsedTransId.length === 0) {
       parsedTransId.push('xlsx_content');
       parsedSource.push('Could not parse XLSX file');
@@ -431,9 +420,10 @@ const parseXlsx = function(arrayBuffer, fileIndex) {
     parsedPercent.push(0);
     parsedNoteArrays.push([]);
   }
-  
   return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
 };
+
+// ========== 其它辅助函数 ==========
 
 const convertXMLEntities = function(string) {
   return string.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -444,7 +434,7 @@ const tagAndWordAsOneChar = function(string) {
   let match;
   while (match = /(<ph[^>]*?>.*?<\/ph[^>]*?>|<bpt[^>]*?>.*?<\/bpt[^>]*?>|<ept[^>]*?>.*?<\/ept[^>]*?>|<it[^>]*?>.*?<\/it[^>]*?>|&lt;.*?&gt;)/g.exec(string)) {
     stringArray.push(...string.substring(0, match.index).split(''));
-    stringArray.push(`<span class="tag" title="${match[0].startsWith('<ph') || match[0].startsWith('<bpt') || match[0].startsWith('<ept') || match[0].startsWith('<it')? convertXMLEntities(match[0]): match[0]}">⬣</span>`);
+    stringArray.push(`<span class="tag" title="${match[0].startsWith('<ph') || match[0].startsWith('<bpt') || match[0].startsWith('<ept') || match[0].startsWith('<it')? convertXMLEntities(match[0]): match[0]}">${match[0]}</span>`);
     string = string.substring(match.index + match[0].length);
   }
   stringArray.push(...string.split(/((?<=[^A-Za-zÀ-ȕ])|(?=[^A-Za-zÀ-ȕ]))/g).filter(string => string.length >= 1));
@@ -452,7 +442,7 @@ const tagAndWordAsOneChar = function(string) {
 };
 
 const tagToPlaceholder = function(string) {
-  return string.replace(/(<ph[^>]*?>.*?<\/ph[^>]*?>|<bpt[^>]*?>.*?<\/bpt[^>]*?>|<ept[^>]*?>.*?<\/ept[^>]*?>|<it[^>]*?>.*?<\/it[^>]*?>|&lt;.*?&gt;)/g, $0 => `<span class="tag" title="${$0.startsWith('<ph') || $0.startsWith('<bpt') || $0.startsWith('<ept') || $0.startsWith('<it')? convertXMLEntities($0): $0}">⬣</span>`);
+  return string.replace(/(<ph[^>]*?>.*?<\/ph[^>]*?>|<bpt[^>]*?>.*?<\/bpt[^>]*?>|<ept[^>]*?>.*?<\/ept[^>]*?>|<it[^>]*?>.*?<\/it[^>]*?>|&lt;.*?&gt;)/g, $0 => `<span class="tag" title="${$0.startsWith('<ph') || $0.startsWith('<bpt') || $0.startsWith('<ept') || $0.startsWith('<it')? convertXMLEntities($0): $0}">${$0}</span>`);
 };
 
 const combineNote = function(noteArray1, noteArray2) {
