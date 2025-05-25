@@ -122,12 +122,28 @@ const hasError = function() {
   if (
     (!files1 || !files2) ||
     (files1.length != files2.length) ||
-    (!Array.from(files1).every(file => ['xlf', 'xliff', 'tmx', 'mqxliff', 'txlf', 'sdlxliff', 'mxliff'].indexOf(file.name.split('.').pop()) >= 0)) ||
-    (!Array.from(files2).every(file => ['xlf', 'xliff', 'tmx', 'mqxliff', 'txlf', 'sdlxliff', 'mxliff'].indexOf(file.name.split('.').pop()) >= 0))
+    (!Array.from(files1).every(file => ['xlf', 'xliff', 'tmx', 'mqxliff', 'txlf', 'sdlxliff', 'mxliff'].indexOf(file.name.split('.').pop().toLowerCase()) >= 0)) ||
+    (!Array.from(files2).every(file => ['xlf', 'xliff', 'tmx', 'mqxliff', 'txlf', 'sdlxliff', 'mxliff'].indexOf(file.name.split('.').pop().toLowerCase()) >= 0))
   ) {
     displayError('Error with files');
     return true;
   }
+  
+  // 检查文件类型是否匹配
+  const getFileType = (filename) => {
+    const ext = filename.split('.').pop().toLowerCase();
+    return ext === 'tmx' ? 'tmx' : 'xlf';
+  };
+  
+  const type1 = getFileType(files1[0].name);
+  const type2 = getFileType(files2[0].name);
+  
+  if (type1 !== type2) {
+    displayError('File types must match (both TMX or both XLF)');
+    return true;
+  }
+  
+  return false;
 };
 
 // TODO: give more specific error messages
@@ -142,13 +158,23 @@ const compareContents = function(readers1, readers2) {
   let contents1 = {};
   let contents2 = {};
   let results = {};
+  
+  // 检测文件格式
+  const isXlf = readers1[0].result.includes('<trans-unit');
+  const isTmx = readers1[0].result.includes('<tu ') || readers1[0].result.includes('<tu>');
+  
   for (let reader2 of readers2) {
-    let [original, transId, source, target, percent, noteArrays] = parseXliff(reader2.result, 2);
+    let [original, transId, source, target, percent, noteArrays] = isXlf ? 
+      parseXliff(reader2.result, 2) : 
+      parseTmx(reader2.result, 2);
     while (contents2.hasOwnProperty(original)) original = original + '_';
     contents2[original] = {target: target, note: noteArrays};
   }
+  
   for (let reader1 of readers1) {
-    let [original, transId, source, target, percent, noteArrays] = parseXliff(reader1.result, 1);
+    let [original, transId, source, target, percent, noteArrays] = isXlf ? 
+      parseXliff(reader1.result, 1) : 
+      parseTmx(reader1.result, 1);
     while (contents1.hasOwnProperty(original)) original = original + '_';
     contents1[original] = {source: source, target: target, note: noteArrays};
 
@@ -211,6 +237,74 @@ const parseXliff = function(content) {
   return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
 };
 
+// 新增：TMX 格式解析函数
+const parseTmx = function(content) {
+  // 从 TMX 文件中提取原始文件名，如果没有则使用默认名称
+  const originalMatch = /<tmx[^>]*>/i.exec(content);
+  const original = 'TMX_File'; // TMX 文件通常没有 original 属性，使用默认名称
+  
+  let parsedTransId = [];
+  let parsedSource = [];
+  let parsedTarget = [];
+  let parsedPercent = [];
+  let parsedNoteArrays = [];
+  
+  // 解析 TMX 中的翻译单元 <tu>
+  const regexTu = new RegExp('<tu[^>]*?(?:tuid="([^"]*?)")?[^>]*?>(.*?)</tu>', 'gs');
+  const regexTuv = new RegExp('<tuv[^>]*?xml:lang="([^"]*?)"[^>]*?>(.*?)</tuv>', 'gs');
+  const regexSeg = new RegExp('<seg[^>]*?>(.*?)</seg>', 's');
+  const regexNote = new RegExp('<note[^>]*?>(.*?)</note>', 'gs');
+  
+  let tuMatch;
+  let tuIndex = 0;
+  
+  while (tuMatch = regexTu.exec(content)) {
+    let tuid = tuMatch[1] || `tu_${tuIndex++}`;
+    let tuContent = tuMatch[2];
+    
+    // 提取注释
+    let notes = [];
+    let noteMatch;
+    while (noteMatch = regexNote.exec(tuContent)) {
+      notes.push(noteMatch[1].trim());
+    }
+    
+    // 解析 tuv 元素
+    let tuvs = {};
+    let tuvMatch;
+    while (tuvMatch = regexTuv.exec(tuContent)) {
+      let lang = tuvMatch[1];
+      let tuvContent = tuvMatch[2];
+      let segMatch = regexSeg.exec(tuvContent);
+      if (segMatch) {
+        tuvs[lang] = segMatch[1];
+      }
+    }
+    
+    // 假设第一个语言是源语言，第二个是目标语言
+    let languages = Object.keys(tuvs);
+    if (languages.length >= 2) {
+      let sourceLang = languages[0];
+      let targetLang = languages[1];
+      
+      parsedTransId.push(tuid);
+      parsedSource.push(tuvs[sourceLang] || '');
+      parsedTarget.push(tuvs[targetLang] || '');
+      parsedPercent.push(0); // TMX 通常没有匹配百分比
+      parsedNoteArrays.push(notes);
+    } else if (languages.length === 1) {
+      // 只有一种语言的情况，可能是单语TMX
+      parsedTransId.push(tuid);
+      parsedSource.push(tuvs[languages[0]] || '');
+      parsedTarget.push(''); // 没有目标文本
+      parsedPercent.push(0);
+      parsedNoteArrays.push(notes);
+    }
+  }
+  
+  return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
+};
+
 const convertXMLEntities = function(string) {
   return string.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 };
@@ -218,9 +312,10 @@ const convertXMLEntities = function(string) {
 const tagAndWordAsOneChar = function(string) {
   let stringArray = [];
   let match;
-  while (match = /(<ph[^>]*?>.*?<\/ph[^>]*?>|&lt;.*?&gt;)/g.exec(string)) {
+  // 支持 TMX 和 XLF 的标签格式
+  while (match = /(<ph[^>]*?>.*?<\/ph[^>]*?>|<bpt[^>]*?>.*?<\/bpt[^>]*?>|<ept[^>]*?>.*?<\/ept[^>]*?>|<it[^>]*?>.*?<\/it[^>]*?>|&lt;.*?&gt;)/g.exec(string)) {
     stringArray.push(...string.substring(0, match.index).split(''));
-    stringArray.push(`<span class="tag" title="${match[0].startsWith('<ph')? convertXMLEntities(match[0]): match[0]}">⬣</span>`);
+    stringArray.push(`<span class="tag" title="${match[0].startsWith('<ph') || match[0].startsWith('<bpt') || match[0].startsWith('<ept') || match[0].startsWith('<it')? convertXMLEntities(match[0]): match[0]}">⬣</span>`);
     string = string.substring(match.index + match[0].length);
   }
   stringArray.push(...string.split(/((?<=[^A-Za-zÀ-ȕ])|(?=[^A-Za-zÀ-ȕ]))/g).filter(string => string.length >= 1));
@@ -228,7 +323,7 @@ const tagAndWordAsOneChar = function(string) {
 };
 
 const tagToPlaceholder = function(string) {
-  return string.replace(/(<ph[^>]*?>.*?<\/ph[^>]*?>|&lt;.*?&gt;)/g, $0 => `<span class="tag" title="${$0.startsWith('<ph')? convertXMLEntities($0): $0}">⬣</span>`);
+  return string.replace(/(<ph[^>]*?>.*?<\/ph[^>]*?>|<bpt[^>]*?>.*?<\/bpt[^>]*?>|<ept[^>]*?>.*?<\/ept[^>]*?>|<it[^>]*?>.*?<\/it[^>]*?>|&lt;.*?&gt;)/g, $0 => `<span class="tag" title="${$0.startsWith('<ph') || $0.startsWith('<bpt') || $0.startsWith('<ept') || $0.startsWith('<it')? convertXMLEntities($0): $0}">⬣</span>`);
 };
 
 const combineNote = function(noteArray1, noteArray2) {
