@@ -20,7 +20,9 @@ const message = document.getElementById('message');
 let files1, files2;
 
 const focusTerminalWOScrolling = function() {
-  terminal.focus({preventScroll: true});
+  if (typeof terminal !== 'undefined') {
+    terminal.focus({preventScroll: true});
+  }
 };
 
 window.addEventListener('load', function(e){
@@ -105,8 +107,7 @@ compare.addEventListener('click', function(e){
         compareContents(readers1, readers2);
       }
     };
-    reader1.readAsText(files1[i]);
-
+    
     const reader2 = new FileReader();
     readers2.push(reader2);
     reader2.onload = function(e){
@@ -114,39 +115,58 @@ compare.addEventListener('click', function(e){
         compareContents(readers1, readers2);
       }
     };
-    reader2.readAsText(files2[i]);
+
+    // 根据文件类型选择读取方式
+    const fileType = getFileType(files1[i].name);
+    if (fileType === 'docx' || fileType === 'xlsx') {
+      reader1.readAsArrayBuffer(files1[i]);
+      reader2.readAsArrayBuffer(files2[i]);
+    } else {
+      reader1.readAsText(files1[i]);
+      reader2.readAsText(files2[i]);
+    }
   }
 });
+
+const getFileType = function(filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  if (['xlf', 'txlf', 'xliff', 'sdlxliff', 'mqxliff', 'mxliff'].includes(ext)) return 'xlf';
+  if (ext === 'tmx') return 'tmx';
+  if (ext === 'txt') return 'txt';
+  if (ext === 'docx') return 'docx';
+  if (ext === 'xlsx') return 'xlsx';
+  return 'unknown';
+};
 
 const hasError = function() {
   if (
     (!files1 || !files2) ||
-    (files1.length != files2.length) ||
-    (!Array.from(files1).every(file => ['xlf', 'txlf', 'xliff', 'sdlxliff', 'mqxliff', 'mxliff', 'tmx'].indexOf(file.name.split('.').pop().toLowerCase()) >= 0)) ||
-    (!Array.from(files2).every(file => ['xlf', 'txlf', 'xliff', 'sdlxliff', 'mqxliff', 'mxliff', 'tmx'].indexOf(file.name.split('.').pop().toLowerCase()) >= 0))
+    (files1.length != files2.length)
   ) {
     displayError('Error with files');
     return true;
   }
   
-  // 检查文件类型是否匹配
-  const getFileType = (filename) => {
-    const ext = filename.split('.').pop().toLowerCase();
-    return ext === 'tmx' ? 'tmx' : 'xlf';
-  };
+  // 检查支持的文件类型
+  const supportedTypes = ['xlf', 'txlf', 'xliff', 'sdlxliff', 'mqxliff', 'mxliff', 'tmx', 'txt', 'docx', 'xlsx'];
+  if (!Array.from(files1).every(file => supportedTypes.includes(getFileType(file.name))) ||
+      !Array.from(files2).every(file => supportedTypes.includes(getFileType(file.name)))) {
+    displayError('Unsupported file type');
+    return true;
+  }
   
+  // 检查文件类型是否匹配
   const type1 = getFileType(files1[0].name);
   const type2 = getFileType(files2[0].name);
   
   if (type1 !== type2) {
-    displayError('File types must match (both TMX or both XLF)');
+    displayError('File types must match');
     return true;
   }
   
   return false;
 };
 
-// TODO: give more specific error messages
 const displayError = function(errorMessage) {
   message.textContent = errorMessage;
   setTimeout(function(){
@@ -159,22 +179,16 @@ const compareContents = function(readers1, readers2) {
   let contents2 = {};
   let results = {};
   
-  // 检测文件格式
-  const isXlf = readers1[0].result.includes('<trans-unit');
-  const isTmx = readers1[0].result.includes('<tu ') || readers1[0].result.includes('<tu>');
+  const fileType = getFileType(files1[0].name);
   
   for (let reader2 of readers2) {
-    let [original, transId, source, target, percent, noteArrays] = isXlf ? 
-      parseXliff(reader2.result, 2) : 
-      parseTmx(reader2.result, 2);
+    let [original, transId, source, target, percent, noteArrays] = parseFileContent(reader2.result, fileType, 2);
     while (contents2.hasOwnProperty(original)) original = original + '_';
     contents2[original] = {target: target, note: noteArrays};
   }
   
   for (let reader1 of readers1) {
-    let [original, transId, source, target, percent, noteArrays] = isXlf ? 
-      parseXliff(reader1.result, 1) : 
-      parseTmx(reader1.result, 1);
+    let [original, transId, source, target, percent, noteArrays] = parseFileContent(reader1.result, fileType, 1);
     while (contents1.hasOwnProperty(original)) original = original + '_';
     contents1[original] = {source: source, target: target, note: noteArrays};
 
@@ -188,9 +202,9 @@ const compareContents = function(readers1, readers2) {
     if (contents2.hasOwnProperty(original)) {
       results[original] = [];
       for (let i = 0; i < contents1[original].target.length; i++) {
-        let shortSource = contents1[original].source[i]? tagToPlaceholder(contents1[original].source[i]): '';
-        let stringArray1 = contents1[original].target[i]? tagAndWordAsOneChar(contents1[original].target[i]): [];
-        let stringArray2 = (contents2[original].target.hasOwnProperty(i) && contents2[original].target[i])? tagAndWordAsOneChar(contents2[original].target[i]): [];
+        let shortSource = contents1[original].source[i] ? tagToPlaceholder(contents1[original].source[i]) : '';
+        let stringArray1 = contents1[original].target[i] ? tagAndWordAsOneChar(contents1[original].target[i]) : [];
+        let stringArray2 = (contents2[original].target.hasOwnProperty(i) && contents2[original].target[i]) ? tagAndWordAsOneChar(contents2[original].target[i]) : [];
         let [dpTable, distance] = diffDP(stringArray1, stringArray2);
         let [diffString1, diffString2] = diffSES(dpTable, stringArray1, stringArray2);
         let combinedNote = combineNote(contents1[original].note[i], contents2[original].note[i]);
@@ -202,6 +216,23 @@ const compareContents = function(readers1, readers2) {
     displayError('No matching files');
   } else {
     displayResults(results);
+  }
+};
+
+const parseFileContent = function(content, fileType, fileIndex) {
+  switch (fileType) {
+    case 'xlf':
+      return parseXliff(content, fileIndex);
+    case 'tmx':
+      return parseTmx(content, fileIndex);
+    case 'txt':
+      return parseTxt(content, fileIndex);
+    case 'docx':
+      return parseDocx(content, fileIndex);
+    case 'xlsx':
+      return parseXlsx(content, fileIndex);
+    default:
+      return ['unknown', [], [], [], [], []];
   }
 };
 
@@ -237,19 +268,14 @@ const parseXliff = function(content) {
   return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
 };
 
-// 新增：TMX 格式解析函数
 const parseTmx = function(content) {
-  // 从 TMX 文件中提取原始文件名，如果没有则使用默认名称
-  const originalMatch = /<tmx[^>]*>/i.exec(content);
-  const original = 'TMX_File'; // TMX 文件通常没有 original 属性，使用默认名称
-  
+  const original = 'TMX_File';
   let parsedTransId = [];
   let parsedSource = [];
   let parsedTarget = [];
   let parsedPercent = [];
   let parsedNoteArrays = [];
   
-  // 解析 TMX 中的翻译单元 <tu>
   const regexTu = new RegExp('<tu[^>]*?(?:tuid="([^"]*?)")?[^>]*?>(.*?)</tu>', 'gs');
   const regexTuv = new RegExp('<tuv[^>]*?xml:lang="([^"]*?)"[^>]*?>(.*?)</tuv>', 'gs');
   const regexSeg = new RegExp('<seg[^>]*?>(.*?)</seg>', 's');
@@ -262,14 +288,12 @@ const parseTmx = function(content) {
     let tuid = tuMatch[1] || `tu_${tuIndex++}`;
     let tuContent = tuMatch[2];
     
-    // 提取注释
     let notes = [];
     let noteMatch;
     while (noteMatch = regexNote.exec(tuContent)) {
       notes.push(noteMatch[1].trim());
     }
     
-    // 解析 tuv 元素
     let tuvs = {};
     let tuvMatch;
     while (tuvMatch = regexTuv.exec(tuContent)) {
@@ -281,7 +305,6 @@ const parseTmx = function(content) {
       }
     }
     
-    // 假设第一个语言是源语言，第二个是目标语言
     let languages = Object.keys(tuvs);
     if (languages.length >= 2) {
       let sourceLang = languages[0];
@@ -290,16 +313,123 @@ const parseTmx = function(content) {
       parsedTransId.push(tuid);
       parsedSource.push(tuvs[sourceLang] || '');
       parsedTarget.push(tuvs[targetLang] || '');
-      parsedPercent.push(0); // TMX 通常没有匹配百分比
+      parsedPercent.push(0);
       parsedNoteArrays.push(notes);
     } else if (languages.length === 1) {
-      // 只有一种语言的情况，可能是单语TMX
       parsedTransId.push(tuid);
       parsedSource.push(tuvs[languages[0]] || '');
-      parsedTarget.push(''); // 没有目标文本
+      parsedTarget.push('');
       parsedPercent.push(0);
       parsedNoteArrays.push(notes);
     }
+  }
+  
+  return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
+};
+
+const parseTxt = function(content, fileIndex) {
+  const original = `TXT_File_${fileIndex}`;
+  const lines = content.split(/\r?\n/);
+  let parsedTransId = [];
+  let parsedSource = [];
+  let parsedTarget = [];
+  let parsedPercent = [];
+  let parsedNoteArrays = [];
+  
+  lines.forEach((line, index) => {
+    if (line.trim()) { // 跳过空行
+      parsedTransId.push(`line_${index + 1}`);
+      parsedSource.push(line);
+      parsedTarget.push(line); // TXT文件源和目标相同
+      parsedPercent.push(0);
+      parsedNoteArrays.push([]);
+    }
+  });
+  
+  return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
+};
+
+const parseDocx = function(arrayBuffer, fileIndex) {
+  const original = `DOCX_File_${fileIndex}`;
+  let parsedTransId = ['doc_content'];
+  let parsedSource = [''];
+  let parsedTarget = [''];
+  let parsedPercent = [0];
+  let parsedNoteArrays = [[]];
+  
+  try {
+    // 简单的DOCX解析 - 查找document.xml中的文本
+    const uint8Array = new Uint8Array(arrayBuffer);
+    const text = new TextDecoder('utf-8').decode(uint8Array);
+    
+    // 尝试查找XML内容
+    const xmlMatch = text.match(/<w:t[^>]*>([^<]+)<\/w:t>/g);
+    if (xmlMatch) {
+      let extractedText = xmlMatch.map(match => {
+        const textMatch = match.match(/>([^<]+)</);
+        return textMatch ? textMatch[1] : '';
+      }).join(' ');
+      
+      if (extractedText.trim()) {
+        parsedSource[0] = extractedText;
+        parsedTarget[0] = extractedText;
+      } else {
+        parsedSource[0] = 'Could not extract text from DOCX';
+        parsedTarget[0] = 'Could not extract text from DOCX';
+      }
+    } else {
+      parsedSource[0] = 'Could not parse DOCX file';
+      parsedTarget[0] = 'Could not parse DOCX file';
+    }
+  } catch (error) {
+    parsedSource[0] = 'Error parsing DOCX file';
+    parsedTarget[0] = 'Error parsing DOCX file';
+  }
+  
+  return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
+};
+
+const parseXlsx = function(arrayBuffer, fileIndex) {
+  const original = `XLSX_File_${fileIndex}`;
+  let parsedTransId = [];
+  let parsedSource = [];
+  let parsedTarget = [];
+  let parsedPercent = [];
+  let parsedNoteArrays = [];
+  
+  try {
+    // 极简XLSX解析 - 查找sharedStrings.xml中的文本
+    const uint8Array = new Uint8Array(arrayBuffer);
+    const text = new TextDecoder('utf-8').decode(uint8Array);
+    
+    // 尝试提取共享字符串
+    const stringMatches = text.match(/<t[^>]*>([^<]+)<\/t>/g);
+    if (stringMatches && stringMatches.length > 0) {
+      stringMatches.forEach((match, index) => {
+        const textMatch = match.match(/>([^<]+)</);
+        if (textMatch && textMatch[1].trim()) {
+          parsedTransId.push(`row_${index + 1}`);
+          parsedSource.push(textMatch[1]);
+          parsedTarget.push(textMatch[1]);
+          parsedPercent.push(0);
+          parsedNoteArrays.push([]);
+        }
+      });
+    }
+    
+    if (parsedTransId.length === 0) {
+      parsedTransId.push('xlsx_content');
+      parsedSource.push('Could not parse XLSX file');
+      parsedTarget.push('Could not parse XLSX file');
+      parsedPercent.push(0);
+      parsedNoteArrays.push([]);
+    }
+  } catch (error) {
+    parsedTransId.push('xlsx_error');
+    parsedSource.push('Error parsing XLSX file');
+    parsedTarget.push('Error parsing XLSX file');
+    parsedPercent.push(0);
+    parsedNoteArrays.push([]);
   }
   
   return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
@@ -312,7 +442,6 @@ const convertXMLEntities = function(string) {
 const tagAndWordAsOneChar = function(string) {
   let stringArray = [];
   let match;
-  // 支持 TMX 和 XLF 的标签格式
   while (match = /(<ph[^>]*?>.*?<\/ph[^>]*?>|<bpt[^>]*?>.*?<\/bpt[^>]*?>|<ept[^>]*?>.*?<\/ept[^>]*?>|<it[^>]*?>.*?<\/it[^>]*?>|&lt;.*?&gt;)/g.exec(string)) {
     stringArray.push(...string.substring(0, match.index).split(''));
     stringArray.push(`<span class="tag" title="${match[0].startsWith('<ph') || match[0].startsWith('<bpt') || match[0].startsWith('<ept') || match[0].startsWith('<it')? convertXMLEntities(match[0]): match[0]}">⬣</span>`);
@@ -345,8 +474,6 @@ const combineNote = function(noteArray1, noteArray2) {
 };
 
 const diffDP = function(stringArray1, stringArray2) {
-  // reference:
-  // https://qiita.com/3000manJPY/items/c28ed74d2d06971c34ef
   const length1 = stringArray1.length;
   const length2 = stringArray2.length;
   if (length1 == 0) stringArray1 = [''];
@@ -357,9 +484,9 @@ const diffDP = function(stringArray1, stringArray2) {
   for (let i = 0; i < length1; i++) {
     for (let j = 0; j < length2; j++) {
       dpTable[i + 1][j + 1] = Math.min(
-        dpTable[i][j + 1] + 1, // insertion
-        dpTable[i + 1][j] + 1, // deletion
-        dpTable[i][j] + 1 * (stringArray1[i] != stringArray2[j]) // replacement
+        dpTable[i][j + 1] + 1,
+        dpTable[i + 1][j] + 1,
+        dpTable[i][j] + 1 * (stringArray1[i] != stringArray2[j])
       );
     }
   }
@@ -367,9 +494,6 @@ const diffDP = function(stringArray1, stringArray2) {
 };
 
 const diffSES = function(dpTable, stringArray1, stringArray2) {
-  // reference:
-  // https://qiita.com/yumura_s/items/43ad19fce4739201705e
-  // https://gist.github.com/gurimusan/7e554eb12f9f59880053
   let i = dpTable.length - 1;
   let j = dpTable[0].length - 1;
   let ses1 = [];
@@ -455,8 +579,6 @@ const displayResults = function(results) {
           )
         ], {type: 'text/html'});
         let resultURL = window.URL.createObjectURL(resultBlob);
-        // reference:
-        // https://stackoverflow.com/questions/13405129/javascript-create-and-save-file
         let a = document.createElement('a');
         a.href = resultURL;
         a.download = `Trans_Diff_${Object.keys(results)[0]}.html`;
