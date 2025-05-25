@@ -7,17 +7,58 @@
 ## 支持文件
 
 文件:
-- [x] 支持单个文件 xlf, xliff, sdlxliff, txlf, mqxliff
-- [x] 不支持多个文件（检测文件ID）, 不支持 tmx，可以用 rainbow 转 tmx 为 xliff
+- [x] 支持单个文件 xlf, xliff, sdlxliff, txlf, mqxliff, tmx, txt
+- [x] 不支持多个文件（检测文件ID），但可以使用工具 (rainbow, disfr) 合并 xlf, tmx文件
+新增功能：
+1. TXT 文件支持 ✅
 
-更新：
-- ⏱ Transifex URL 转换器直接下载 XLIFF 文件
+按行分割对比
+自动跳过空行
+每行作为一个对比单元
 
-## 如何使用
+2. DOCX 文件支持 ⚠️ (有限)
 
-请观看 YouTube的“如何使用”视频以获取详细信息：
+全文对比
+尝试提取Word文档中的文本内容
+简单解析XML结构中的 <w:t> 标签
 
-[![Trans Diff - 如何使用](httpsimg.youtube.comi/-zuSH3Bl_x0/0.jpg(https://www.youtube.com/watch?v=-zuSH3Bl_x0)
+3. XLSX 文件支持 ⚠️ (非常有限)
+
+按行对比
+尝试从共享字符串表提取文本
+只处理第一个工作表的文本内容
+
+4. TMX 文件支持✅
+
+重要限制说明：
+DOCX 解析限制：
+
+只能提取基本的文本内容
+无法处理复杂的格式、表格、图片等
+对于加密或复杂结构的DOCX可能失败
+
+XLSX 解析限制：
+
+极其有限的解析能力
+只能提取共享字符串中的文本
+无法处理公式、数字、日期等
+无法保证单元格的正确顺序
+
+使用建议：
+
+TXT 文件：完全支持，效果最好
+DOCX 文件：建议先转换为TXT格式再对比
+XLSX 文件：建议导出为CSV或TXT格式再对比
+
+改进建议：
+如果你需要更好的 DOCX/XLSX 支持，我建议：
+
+使用专门的转换工具将文件转为TXT格式
+或者考虑引入 mammoth.js（DOCX）和 SheetJS（XLSX）库
+对于翻译工作流，通常推荐使用专门的翻译格式（XLF/TMX）
+
+这个版本应该能满足你的基本需求，特别是TXT格式的对比会非常准确。DOCX和XLSX的支持虽然有限，但可以作为应急使用。
+
 
 ### 如何生成 diff 文件
 
@@ -32,6 +73,11 @@
 - .xlf ([XLIFF 版本 1.2](http://docs.oasis-open.orgliff/v1.2/os/xliff-core.html))
 - .mqxliff (.mqxlz 当前不支持)
 - .mxliff
+- .sdlxliff
+- .txlf
+- .tmx
+- .txt
+  
 
 Diff 规格：
 
