@@ -174,25 +174,7 @@ const displayError = function(errorMessage) {
   }, 5000);
 };
 
-const compareContents = function(readers1, readers2) {
-  let contents1 = {};
-  let contents2 = {};
-  let results = {};
-  
-  const fileType = getFileType(files1[0].name);
-  
-  for (let reader2 of readers2) {
-    let [original, transId, source, target, percent, noteArrays] = parseFileContent(reader2.result, fileType, 2);
-    while (contents2.hasOwnProperty(original)) original = original + '_';
-    contents2[original] = {target: target, note: noteArrays};
-  }
-  
-  for (let reader1 of readers1) {
-    let [original, transId, source, target, percent, noteArrays] = parseFileContent(reader1.result, fileType, 1);
-    while (contents1.hasOwnProperty(original)) original = original + '_';
-    contents1[original] = {source: source, target: target, note: noteArrays};
-
-    if (readers1.length == 1 && readers2.length == 1) {
+ == 1 && readers2.length == 1) {
       let onlyOriginal2 = Object.keys(contents2)[0];
       if (onlyOriginal2 != original) {
         contents2[original] = contents2[onlyOriginal2];
@@ -219,7 +201,7 @@ const compareContents = function(readers1, readers2) {
   }
 };
 
-const parseFileContent = function(content, fileType, fileIndex) {
+const parseFileContent = async function(content, fileType, fileIndex) {
   switch (fileType) {
     case 'xlf':
       return parseXliff(content, fileIndex);
@@ -228,9 +210,9 @@ const parseFileContent = function(content, fileType, fileIndex) {
     case 'txt':
       return parseTxt(content, fileIndex);
     case 'docx':
-      return parseDocx(content, fileIndex);
+      return await parseDocx(content, fileIndex);
     case 'xlsx':
-      return parseXlsx(content, fileIndex);
+      return await parseXlsx(content, fileIndex);
     default:
       return ['unknown', [], [], [], [], []];
   }
@@ -349,7 +331,7 @@ const parseTxt = function(content, fileIndex) {
   return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
 };
 
-const parseDocx = function(arrayBuffer, fileIndex) {
+const parseDocx = async function(arrayBuffer, fileIndex) {
   const original = `DOCX_File_${fileIndex}`;
   let parsedTransId = ['doc_content'];
   let parsedSource = [''];
@@ -358,38 +340,58 @@ const parseDocx = function(arrayBuffer, fileIndex) {
   let parsedNoteArrays = [[]];
   
   try {
-    // 简单的DOCX解析 - 查找document.xml中的文本
-    const uint8Array = new Uint8Array(arrayBuffer);
-    const text = new TextDecoder('utf-8').decode(uint8Array);
+    // 检查JSZip是否可用
+    if (typeof JSZip === 'undefined') {
+      throw new Error('JSZip library not loaded');
+    }
+
+    const zip = new JSZip();
+    const zipContent = await zip.loadAsync(arrayBuffer);
     
-    // 尝试查找XML内容
-    const xmlMatch = text.match(/<w:t[^>]*>([^<]+)<\/w:t>/g);
-    if (xmlMatch) {
-      let extractedText = xmlMatch.map(match => {
-        const textMatch = match.match(/>([^<]+)</);
+    // 读取document.xml文件
+    const documentXml = await zipContent.file('word/document.xml').async('string');
+    
+    // 提取文本内容
+    const textMatches = documentXml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g);
+    if (textMatches && textMatches.length > 0) {
+      const extractedText = textMatches.map(match => {
+        const textMatch = match.match(/<w:t[^>]*>([^<]*)<\/w:t>/);
         return textMatch ? textMatch[1] : '';
-      }).join(' ');
+      }).join(' ').trim();
       
-      if (extractedText.trim()) {
+      if (extractedText) {
         parsedSource[0] = extractedText;
         parsedTarget[0] = extractedText;
       } else {
-        parsedSource[0] = 'Could not extract text from DOCX';
-        parsedTarget[0] = 'Could not extract text from DOCX';
+        parsedSource[0] = 'No text content found in DOCX';
+        parsedTarget[0] = 'No text content found in DOCX';
       }
     } else {
-      parsedSource[0] = 'Could not parse DOCX file';
-      parsedTarget[0] = 'Could not parse DOCX file';
+      // 尝试其他可能的文本节点
+      const paragraphs = documentXml.match(/<w:p[^>]*>(.*?)<\/w:p>/gs);
+      if (paragraphs) {
+        const allText = paragraphs.map(p => {
+          const texts = p.match(/<w:t[^>]*>([^<]*)<\/w:t>/g);
+          return texts ? texts.map(t => t.replace(/<[^>]*>/g, '')).join(' ') : '';
+        }).filter(text => text.trim()).join('\n');
+        
+        parsedSource[0] = allText || 'No readable text found in DOCX';
+        parsedTarget[0] = allText || 'No readable text found in DOCX';
+      } else {
+        parsedSource[0] = 'Could not parse DOCX structure';
+        parsedTarget[0] = 'Could not parse DOCX structure';
+      }
     }
   } catch (error) {
-    parsedSource[0] = 'Error parsing DOCX file';
-    parsedTarget[0] = 'Error parsing DOCX file';
+    console.error('DOCX parsing error:', error);
+    parsedSource[0] = `Error parsing DOCX: ${error.message}`;
+    parsedTarget[0] = `Error parsing DOCX: ${error.message}`;
   }
   
   return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
 };
 
-const parseXlsx = function(arrayBuffer, fileIndex) {
+const parseXlsx = async function(arrayBuffer, fileIndex) {
   const original = `XLSX_File_${fileIndex}`;
   let parsedTransId = [];
   let parsedSource = [];
@@ -398,36 +400,46 @@ const parseXlsx = function(arrayBuffer, fileIndex) {
   let parsedNoteArrays = [];
   
   try {
-    // 极简XLSX解析 - 查找sharedStrings.xml中的文本
-    const uint8Array = new Uint8Array(arrayBuffer);
-    const text = new TextDecoder('utf-8').decode(uint8Array);
+    // 检查XLSX库是否可用
+    if (typeof XLSX === 'undefined') {
+      throw new Error('XLSX library not loaded');
+    }
+
+    // 使用SheetJS解析Excel文件
+    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
     
-    // 尝试提取共享字符串
-    const stringMatches = text.match(/<t[^>]*>([^<]+)<\/t>/g);
-    if (stringMatches && stringMatches.length > 0) {
-      stringMatches.forEach((match, index) => {
-        const textMatch = match.match(/>([^<]+)</);
-        if (textMatch && textMatch[1].trim()) {
-          parsedTransId.push(`row_${index + 1}`);
-          parsedSource.push(textMatch[1]);
-          parsedTarget.push(textMatch[1]);
-          parsedPercent.push(0);
-          parsedNoteArrays.push([]);
+    // 转换为JSON格式
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    
+    if (jsonData && jsonData.length > 0) {
+      jsonData.forEach((row, index) => {
+        if (row && row.length > 0) {
+          const cellContent = row.join(' ').trim();
+          if (cellContent) {
+            parsedTransId.push(`row_${index + 1}`);
+            parsedSource.push(cellContent);
+            parsedTarget.push(cellContent);
+            parsedPercent.push(0);
+            parsedNoteArrays.push([]);
+          }
         }
       });
     }
     
     if (parsedTransId.length === 0) {
       parsedTransId.push('xlsx_content');
-      parsedSource.push('Could not parse XLSX file');
-      parsedTarget.push('Could not parse XLSX file');
+      parsedSource.push('No data found in XLSX file');
+      parsedTarget.push('No data found in XLSX file');
       parsedPercent.push(0);
       parsedNoteArrays.push([]);
     }
   } catch (error) {
+    console.error('XLSX parsing error:', error);
     parsedTransId.push('xlsx_error');
-    parsedSource.push('Error parsing XLSX file');
-    parsedTarget.push('Error parsing XLSX file');
+    parsedSource.push(`Error parsing XLSX: ${error.message}`);
+    parsedTarget.push(`Error parsing XLSX: ${error.message}`);
     parsedPercent.push(0);
     parsedNoteArrays.push([]);
   }
