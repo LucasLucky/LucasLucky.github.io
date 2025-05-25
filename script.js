@@ -102,17 +102,17 @@ compare.addEventListener('click', function(e){
 
     const reader1 = new FileReader();
     readers1.push(reader1);
-    reader1.onload = function(e){
+    reader1.onload = async function(e){
       if ([...readers1, ...readers2].every(reader => reader.readyState == 2)) {
-        compareContents(readers1, readers2);
+        await compareContents(readers1, readers2);
       }
     };
     
     const reader2 = new FileReader();
     readers2.push(reader2);
-    reader2.onload = function(e){
+    reader2.onload = async function(e){
       if ([...readers1, ...readers2].every(reader => reader.readyState == 2)) {
-        compareContents(readers1, readers2);
+        await compareContents(readers1, readers2);
       }
     };
 
@@ -174,21 +174,23 @@ const displayError = function(errorMessage) {
   }, 5000);
 };
 
-const compareContents = function(readers1, readers2) {
+const compareContents = async function(readers1, readers2) {
   let contents1 = {};
   let contents2 = {};
   let results = {};
   
   const fileType = getFileType(files1[0].name);
   
+  // 处理文件2
   for (let reader2 of readers2) {
-    let [original, transId, source, target, percent, noteArrays] = parseFileContent(reader2.result, fileType, 2);
+    let [original, transId, source, target, percent, noteArrays] = await parseFileContent(reader2.result, fileType, 2);
     while (contents2.hasOwnProperty(original)) original = original + '_';
     contents2[original] = {target: target, note: noteArrays};
   }
   
+  // 处理文件1
   for (let reader1 of readers1) {
-    let [original, transId, source, target, percent, noteArrays] = parseFileContent(reader1.result, fileType, 1);
+    let [original, transId, source, target, percent, noteArrays] = await parseFileContent(reader1.result, fileType, 1);
     while (contents1.hasOwnProperty(original)) original = original + '_';
     contents1[original] = {source: source, target: target, note: noteArrays};
 
@@ -219,7 +221,7 @@ const compareContents = function(readers1, readers2) {
   }
 };
 
-const parseFileContent = function(content, fileType, fileIndex) {
+const parseFileContent = async function(content, fileType, fileIndex) {
   switch (fileType) {
     case 'xlf':
       return parseXliff(content, fileIndex);
@@ -228,7 +230,7 @@ const parseFileContent = function(content, fileType, fileIndex) {
     case 'txt':
       return parseTxt(content, fileIndex);
     case 'docx':
-      return parseDocx(content, fileIndex);
+      return await parseDocx(content, fileIndex);
     case 'xlsx':
       return parseXlsx(content, fileIndex);
     default:
