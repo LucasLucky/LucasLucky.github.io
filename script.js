@@ -130,7 +130,7 @@ compare.addEventListener('click', function(e){
 
 const getFileType = function(filename) {
   const ext = filename.split('.').pop().toLowerCase();
-  if (['xlf', 'mqxliff', 'mxliff'].includes(ext)) return 'xlf';
+  if (['xlf', 'txlf', 'xliff', 'sdlxliff', 'mqxliff', 'mxliff'].includes(ext)) return 'xlf';
   if (ext === 'tmx') return 'tmx';
   if (ext === 'txt') return 'txt';
   if (ext === 'docx') return 'docx';
@@ -148,7 +148,7 @@ const hasError = function() {
   }
   
   // 检查支持的文件类型
-  const supportedTypes = ['xlf', 'mqxliff', 'mxliff', 'tmx', 'txt', 'docx', 'xlsx'];
+  const supportedTypes = ['xlf', 'txlf', 'xliff', 'sdlxliff', 'mqxliff', 'mxliff', 'tmx', 'txt', 'docx', 'xlsx'];
   if (!Array.from(files1).every(file => supportedTypes.includes(getFileType(file.name))) ||
       !Array.from(files2).every(file => supportedTypes.includes(getFileType(file.name)))) {
     displayError('Unsupported file type');
