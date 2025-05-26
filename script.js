@@ -351,7 +351,6 @@ const parseTxt = function(content, fileIndex) {
   return [original, parsedTransId, parsedSource, parsedTarget, parsedPercent, parsedNoteArrays];
 };
 
-// 修复后的 DOCX 解析函数
 const parseDocx = async function(arrayBuffer, fileIndex) {
   const original = `DOCX_File_${fileIndex}`;
   let parsedTransId = [];
@@ -361,14 +360,27 @@ const parseDocx = async function(arrayBuffer, fileIndex) {
   let parsedNoteArrays = [];
   
   try {
-    // 检查是否有 mammoth 库（如果有的话使用）
-    if (typeof mammoth !== 'undefined') {
-      const result = await mammoth.extractRawText({arrayBuffer: arrayBuffer});
-      const text = result.value;
+    // 使用JSZip解析DOCX文件
+    const zip = new JSZip();
+    const docxZip = await zip.loadAsync(arrayBuffer);
+    
+    // 读取document.xml文件
+    const documentXml = await docxZip.file('word/document.xml').async('string');
+    
+    // 提取文本内容
+    const textMatches = documentXml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g);
+    if (textMatches && textMatches.length > 0) {
+      let allText = '';
+      textMatches.forEach(match => {
+        const textMatch = match.match(/<w:t[^>]*>([^<]*)<\/w:t>/);
+        if (textMatch && textMatch[1]) {
+          allText += textMatch[1];
+        }
+      });
       
-      if (text.trim()) {
+      if (allText.trim()) {
         // 按段落分割文本
-        const paragraphs = text.split(/\n+/).filter(p => p.trim());
+        const paragraphs = allText.split(/\n+/).filter(p => p.trim());
         if (paragraphs.length > 0) {
           paragraphs.forEach((paragraph, index) => {
             if (paragraph.trim()) {
@@ -381,8 +393,8 @@ const parseDocx = async function(arrayBuffer, fileIndex) {
           });
         } else {
           parsedTransId.push('doc_content');
-          parsedSource.push(text.trim());
-          parsedTarget.push(text.trim());
+          parsedSource.push(allText.trim());
+          parsedTarget.push(allText.trim());
           parsedPercent.push(0);
           parsedNoteArrays.push([]);
         }
@@ -394,114 +406,11 @@ const parseDocx = async function(arrayBuffer, fileIndex) {
         parsedNoteArrays.push([]);
       }
     } else {
-      // 如果没有 mammoth 库，使用简单的 ZIP 解析
-      const uint8Array = new Uint8Array(arrayBuffer);
-      
-      // 寻找 ZIP 文件的中央目录
-      let centralDirOffset = -1;
-      for (let i = uint8Array.length - 22; i >= 0; i--) {
-        if (uint8Array[i] === 0x50 && uint8Array[i + 1] === 0x4b && 
-            uint8Array[i + 2] === 0x05 && uint8Array[i + 3] === 0x06) {
-          centralDirOffset = new DataView(uint8Array.buffer, i + 16, 4).getUint32(0, true);
-          break;
-        }
-      }
-      
-      if (centralDirOffset === -1) {
-        throw new Error('Invalid DOCX file: cannot find central directory');
-      }
-      
-      // 查找 word/document.xml 文件
-      let documentXmlContent = null;
-      let currentOffset = centralDirOffset;
-      
-      while (currentOffset < uint8Array.length - 46) {
-        if (uint8Array[currentOffset] === 0x50 && uint8Array[currentOffset + 1] === 0x4b &&
-            uint8Array[currentOffset + 2] === 0x01 && uint8Array[currentOffset + 3] === 0x02) {
-          
-          const nameLength = new DataView(uint8Array.buffer, currentOffset + 28, 2).getUint16(0, true);
-          const extraLength = new DataView(uint8Array.buffer, currentOffset + 30, 2).getUint16(0, true);
-          const commentLength = new DataView(uint8Array.buffer, currentOffset + 32, 2).getUint16(0, true);
-          const localHeaderOffset = new DataView(uint8Array.buffer, currentOffset + 42, 4).getUint32(0, true);
-          
-          const fileName = new TextDecoder().decode(
-            uint8Array.slice(currentOffset + 46, currentOffset + 46 + nameLength)
-          );
-          
-          if (fileName === 'word/document.xml') {
-            // 读取本地文件头
-            const localNameLength = new DataView(uint8Array.buffer, localHeaderOffset + 26, 2).getUint16(0, true);
-            const localExtraLength = new DataView(uint8Array.buffer, localHeaderOffset + 28, 2).getUint16(0, true);
-            const compressedSize = new DataView(uint8Array.buffer, localHeaderOffset + 18, 4).getUint32(0, true);
-            
-            const fileDataOffset = localHeaderOffset + 30 + localNameLength + localExtraLength;
-            const compressedData = uint8Array.slice(fileDataOffset, fileDataOffset + compressedSize);
-            
-            // 简单的解压缩（假设是存储模式或轻微压缩）
-            try {
-              documentXmlContent = new TextDecoder().decode(compressedData);
-            } catch (e) {
-              // 如果解码失败，尝试简单的字符串提取
-              documentXmlContent = String.fromCharCode.apply(null, compressedData);
-            }
-            break;
-          }
-          
-          currentOffset += 46 + nameLength + extraLength + commentLength;
-        } else {
-          currentOffset++;
-        }
-      }
-      
-      if (documentXmlContent) {
-        // 提取文本内容
-        const textMatches = documentXmlContent.match(/<w:t[^>]*>([^<]*)<\/w:t>/g);
-        if (textMatches && textMatches.length > 0) {
-          let allText = '';
-          textMatches.forEach(match => {
-            const textMatch = match.match(/<w:t[^>]*>([^<]*)<\/w:t>/);
-            if (textMatch && textMatch[1]) {
-              allText += textMatch[1] + ' ';
-            }
-          });
-          
-          if (allText.trim()) {
-            // 按句子分割文本
-            const sentences = allText.trim().split(/[.!?]+/).filter(s => s.trim());
-            if (sentences.length > 0) {
-              sentences.forEach((sentence, index) => {
-                if (sentence.trim()) {
-                  parsedTransId.push(`sent_${index + 1}`);
-                  parsedSource.push(sentence.trim());
-                  parsedTarget.push(sentence.trim());
-                  parsedPercent.push(0);
-                  parsedNoteArrays.push([]);
-                }
-              });
-            } else {
-              parsedTransId.push('doc_content');
-              parsedSource.push(allText.trim());
-              parsedTarget.push(allText.trim());
-              parsedPercent.push(0);
-              parsedNoteArrays.push([]);
-            }
-          } else {
-            parsedTransId.push('doc_content');
-            parsedSource.push('Empty DOCX document');
-            parsedTarget.push('Empty DOCX document');
-            parsedPercent.push(0);
-            parsedNoteArrays.push([]);
-          }
-        } else {
-          parsedTransId.push('doc_content');
-          parsedSource.push('No text found in DOCX');
-          parsedTarget.push('No text found in DOCX');
-          parsedPercent.push(0);
-          parsedNoteArrays.push([]);
-        }
-      } else {
-        throw new Error('Cannot find document.xml in DOCX file');
-      }
+      parsedTransId.push('doc_content');
+      parsedSource.push('No text found in DOCX');
+      parsedTarget.push('No text found in DOCX');
+      parsedPercent.push(0);
+      parsedNoteArrays.push([]);
     }
   } catch (error) {
     console.error('Error parsing DOCX:', error);
@@ -709,7 +618,7 @@ const displayResults = function(results) {
             `<title>Trans_Diff_${Object.keys(results)[0]}</title>`
           ).replace(
             templateMatch[0],
-            Object.keys(resultTables).map(original => templateMatch[1].replace('{ph1}', original).replace('{ph2}', resultTables[original].replace(', '&#36;'))).join('\n')
+            Object.keys(resultTables).map(original => templateMatch[1].replace('{ph1}', original).replace('{ph2}', resultTables[original].replace('$', '&#36;'))).join('\n')
           )
         ], {type: 'text/html'});
         let resultURL = window.URL.createObjectURL(resultBlob);
@@ -730,4 +639,4 @@ const displayResults = function(results) {
   focusTerminalWOScrolling();
 };
 
-})()
+})();
