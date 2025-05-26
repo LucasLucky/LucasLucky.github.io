@@ -379,28 +379,12 @@ const parseDocx = async function(arrayBuffer, fileIndex) {
     const text = result.value;
     
     if (text && text.trim()) {
-      // 按段落分割文本（通过双换行符或单换行符）
-      const paragraphs = text.split(/\n+/).filter(p => p.trim());
-      
-      if (paragraphs.length > 1) {
-        // 如果有多个段落，分别处理每个段落
-        paragraphs.forEach((paragraph, index) => {
-          if (paragraph.trim()) {
-            parsedTransId.push(`para_${index + 1}`);
-            parsedSource.push(paragraph.trim());
-            parsedTarget.push(paragraph.trim());
-            parsedPercent.push(0);
-            parsedNoteArrays.push([]);
-          }
-        });
-      } else {
-        // 如果只有一个段落或没有明显的段落分割，作为整体处理
-        parsedTransId.push('doc_content');
-        parsedSource.push(text.trim());
-        parsedTarget.push(text.trim());
-        parsedPercent.push(0);
-        parsedNoteArrays.push([]);
-      }
+      // 将整个文档作为一个单元处理，不再按段落分割
+      parsedTransId.push('doc_content');
+      parsedSource.push(text.trim());
+      parsedTarget.push(text.trim());
+      parsedPercent.push(0);
+      parsedNoteArrays.push([]);
     } else {
       // 空文档
       parsedTransId.push('doc_content');
