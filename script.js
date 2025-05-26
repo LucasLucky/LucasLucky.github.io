@@ -94,27 +94,32 @@ for (let e of ['mouseleave', 'mouseup']) {
   });
 }
 
-compare.addEventListener('click', function(e){
+compare.addEventListener('click', async function(e){
   if (hasError()) return;
   let readers1 = [];
   let readers2 = [];
+  
+  // 创建 Promise 数组来处理所有文件读取
+  const readPromises = [];
+  
   for (let i = 0; i < files1.length; i++) {
-
     const reader1 = new FileReader();
-    readers1.push(reader1);
-    reader1.onload = function(e){
-      if ([...readers1, ...readers2].every(reader => reader.readyState == 2)) {
-        compareContents(readers1, readers2);
-      }
-    };
-    
     const reader2 = new FileReader();
+    readers1.push(reader1);
     readers2.push(reader2);
-    reader2.onload = function(e){
-      if ([...readers1, ...readers2].every(reader => reader.readyState == 2)) {
-        compareContents(readers1, readers2);
-      }
-    };
+
+    // 创建读取 Promise
+    const promise1 = new Promise((resolve, reject) => {
+      reader1.onload = () => resolve();
+      reader1.onerror = reject;
+    });
+    
+    const promise2 = new Promise((resolve, reject) => {
+      reader2.onload = () => resolve();
+      reader2.onerror = reject;
+    });
+
+    readPromises.push(promise1, promise2);
 
     // 根据文件类型选择读取方式
     const fileType = getFileType(files1[i].name);
@@ -125,6 +130,15 @@ compare.addEventListener('click', function(e){
       reader1.readAsText(files1[i]);
       reader2.readAsText(files2[i]);
     }
+  }
+  
+  // 等待所有文件读取完成
+  try {
+    await Promise.all(readPromises);
+    await compareContents(readers1, readers2);
+  } catch (error) {
+    console.error('Error reading files:', error);
+    displayError('Error reading files: ' + error.message);
   }
 });
 
@@ -174,21 +188,23 @@ const displayError = function(errorMessage) {
   }, 5000);
 };
 
-const compareContents = function(readers1, readers2) {
+const compareContents = async function(readers1, readers2) {
   let contents1 = {};
   let contents2 = {};
   let results = {};
   
   const fileType = getFileType(files1[0].name);
   
+  // 处理文件2
   for (let reader2 of readers2) {
-    let [original, transId, source, target, percent, noteArrays] = parseFileContent(reader2.result, fileType, 2);
+    let [original, transId, source, target, percent, noteArrays] = await parseFileContent(reader2.result, fileType, 2);
     while (contents2.hasOwnProperty(original)) original = original + '_';
     contents2[original] = {target: target, note: noteArrays};
   }
   
+  // 处理文件1
   for (let reader1 of readers1) {
-    let [original, transId, source, target, percent, noteArrays] = parseFileContent(reader1.result, fileType, 1);
+    let [original, transId, source, target, percent, noteArrays] = await parseFileContent(reader1.result, fileType, 1);
     while (contents1.hasOwnProperty(original)) original = original + '_';
     contents1[original] = {source: source, target: target, note: noteArrays};
 
@@ -219,7 +235,7 @@ const compareContents = function(readers1, readers2) {
   }
 };
 
-const parseFileContent = function(content, fileType, fileIndex) {
+const parseFileContent = async function(content, fileType, fileIndex) {
   switch (fileType) {
     case 'xlf':
       return parseXliff(content, fileIndex);
@@ -228,7 +244,7 @@ const parseFileContent = function(content, fileType, fileIndex) {
     case 'txt':
       return parseTxt(content, fileIndex);
     case 'docx':
-      return parseDocx(content, fileIndex);
+      return await parseDocx(content, fileIndex);
     case 'xlsx':
       return parseXlsx(content, fileIndex);
     default:
@@ -358,58 +374,48 @@ const parseDocx = async function(arrayBuffer, fileIndex) {
   let parsedNoteArrays = [];
   
   try {
-    // 使用JSZip解析DOCX文件
-    const zip = new JSZip();
-    const docxZip = await zip.loadAsync(arrayBuffer);
+    // 使用 mammoth 解析 DOCX 文件
+    const result = await mammoth.extractRawText({arrayBuffer: arrayBuffer});
+    const text = result.value;
     
-    // 读取document.xml文件
-    const documentXml = await docxZip.file('word/document.xml').async('string');
-    
-    // 提取文本内容
-    const textMatches = documentXml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g);
-    if (textMatches && textMatches.length > 0) {
-      let allText = '';
-      textMatches.forEach(match => {
-        const textMatch = match.match(/<w:t[^>]*>([^<]*)<\/w:t>/);
-        if (textMatch && textMatch[1]) {
-          allText += textMatch[1];
-        }
-      });
+    if (text && text.trim()) {
+      // 按段落分割文本（通过双换行符或单换行符）
+      const paragraphs = text.split(/\n+/).filter(p => p.trim());
       
-      if (allText.trim()) {
-        // 按段落分割文本
-        const paragraphs = allText.split(/\n+/).filter(p => p.trim());
-        if (paragraphs.length > 0) {
-          paragraphs.forEach((paragraph, index) => {
-            if (paragraph.trim()) {
-              parsedTransId.push(`para_${index + 1}`);
-              parsedSource.push(paragraph.trim());
-              parsedTarget.push(paragraph.trim());
-              parsedPercent.push(0);
-              parsedNoteArrays.push([]);
-            }
-          });
-        } else {
-          parsedTransId.push('doc_content');
-          parsedSource.push(allText.trim());
-          parsedTarget.push(allText.trim());
-          parsedPercent.push(0);
-          parsedNoteArrays.push([]);
-        }
+      if (paragraphs.length > 1) {
+        // 如果有多个段落，分别处理每个段落
+        paragraphs.forEach((paragraph, index) => {
+          if (paragraph.trim()) {
+            parsedTransId.push(`para_${index + 1}`);
+            parsedSource.push(paragraph.trim());
+            parsedTarget.push(paragraph.trim());
+            parsedPercent.push(0);
+            parsedNoteArrays.push([]);
+          }
+        });
       } else {
+        // 如果只有一个段落或没有明显的段落分割，作为整体处理
         parsedTransId.push('doc_content');
-        parsedSource.push('Empty DOCX document');
-        parsedTarget.push('Empty DOCX document');
+        parsedSource.push(text.trim());
+        parsedTarget.push(text.trim());
         parsedPercent.push(0);
         parsedNoteArrays.push([]);
       }
     } else {
+      // 空文档
       parsedTransId.push('doc_content');
-      parsedSource.push('No text found in DOCX');
-      parsedTarget.push('No text found in DOCX');
+      parsedSource.push('Empty DOCX document');
+      parsedTarget.push('Empty DOCX document');
       parsedPercent.push(0);
       parsedNoteArrays.push([]);
     }
+    
+    // 如果有警告信息，可以添加到注释中
+    if (result.messages && result.messages.length > 0) {
+      const warnings = result.messages.map(msg => msg.message).join('; ');
+      console.log('DOCX parsing warnings:', warnings);
+    }
+    
   } catch (error) {
     console.error('Error parsing DOCX:', error);
     parsedTransId.push('doc_error');
